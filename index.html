@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Interactive Multiform Visualization system in D3</title>
+
+
+  <script src="http://d3js.org/d3.v4.min.js"></script>
+  <script src="https://d3js.org/d3-queue.v2.min.js"></script>
+  <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+  <script src="https://d3js.org/d3-scale.v2.min.js"></script>
+  <script src="http://d3js.org/topojson.v1.min.js"></script>
+  <style type="text/css">
+  div.tooltip {
+    position: absolute;
+    text-align: center;
+    width: 150px;
+    height: 40px;
+    padding: 2px;
+    font: 12px sans-serif;
+    background: white;
+    pointer-events: none;
+  }
+  .states {
+    fill: white;
+    stroke: #fff;
+    stroke-linejoin: round;
+  }
+  svg .myrect {
+    fill: lightblue;
+    stroke-width: 0px;
+  }
+  svg .myrect:hover {
+    fill: darkblue;
+  }
+</style>
+
+<script type="text/javascript">
+  var mydata;
+  var my_data_map;
+  var my_data_graph;
+  var max=0,min=0;
+
+  var margin_measures = {top: 10, right: 10, bottom: 30, left: 150};
+
+  var svg_bar_width = 1250 - margin_measures.left - margin_measures.right;
+  var svg_bar_height = 700 - margin_measures.top - margin_measures.bottom;
+
+  var margin_graph = {top: 10, right: 10, bottom: 30, left: 100};
+
+  var svg_map_width = 900 - margin_graph.left - margin_graph.right;
+  var svg_map_height = 600 - margin_graph.top - margin_graph.bottom;
+
+  var margin = {top: 10, right: 10, bottom: 30, left: 150};
+  var svg_width = 1000;
+  var svg_height = 800 - margin.top - margin.bottom;
+  function loadData()
+  {
+    d3.csv("https://raw.githubusercontent.com/appuk/d3_vis/master/losses2015_transformed.csv",function(data)
+    {
+
+      mydata=data;
+      d3.select("#svg_graph")
+      .attr("width", svg_bar_width + margin_measures.left + margin_measures.right)
+      .attr("height", svg_bar_height + margin_measures.top + margin_measures.bottom)
+      .append("g")
+      .attr("id", "svg_graph_g_id")
+      .attr("transform", "translate(" + margin_measures.left + "," + margin_measures.top + ")");
+
+      d3.select("#svg_map")
+      .attr("width", svg_map_width + margin_graph.left + margin_graph.right)
+      .attr("height", svg_map_height + margin_graph.top + margin_graph.bottom)
+      .append("g")
+      .attr("id", "svg_map_g_id")
+      .attr("transform", "translate(" + margin_graph.left + "," + margin_graph.top + ")");
+
+      generateDataBar(null);
+      createBarChart();
+      generateDataMap(null);
+      createTreeMap();
+
+
+    }     );
+  }
+  function generateDataBar(natural_disaster)
+  {
+    if (natural_disaster)
+    {
+      d3.select("#title_graph").text("Losses 2015 [$] State: " + natural_disaster);
+
+      my_data_graph = d3.nest()
+      .key(function(d) { return d.Damage_Descp;})
+      .rollup(function(d) {
+        return d3.sum(d, function(g) {return g.Amount; });
+      })
+      .entries(mydata.filter(function(d) {return d.State_Abv.replace(/ /g, '') == natural_disaster;}));
+      my_data_graph.sort(function (a, b) {
+        return b.value - a.value;
+      })
+
+    } else
+    {
+      d3.select("#title_graph").text("Losses 2015 [$] State: All");
+      my_data_graph = d3.nest()
+      .key(function(d) { return d.Damage_Descp;})
+      .rollup(function(d) {
+        return d3.sum(d, function(g) {return g.Amount; });
+      })
+      .entries(mydata)
+      my_data_graph.sort(function (a, b) {
+        return b.value - a.value;
+      })
+    }
+
+  }
+  function generateDataMap(damage_type)
+  {
+    min=0;
+    max=0;
+    if (damage_type)
+    {
+      d3.select("#title_map").text("Losses 2015 [$] Damage Type: " + damage_type);
+
+      my_data_map = d3.nest()
+      .key(function(d) { return d.State_Code.replace(/ /g, '');})
+      .rollup(function(d) {
+        return d3.sum(d, function(g) {return g.Amount; });
+      })
+      .entries(mydata.filter(function(d) {return d.Damage_Descp == damage_type;}));
+      for (var i = 0; i < my_data_map.length; i++) {
+        if( my_data_map[i].value < min) min = my_data_map[i].value;
+        if( my_data_map[i].value > max) max = my_data_map[i].value;
+      }
+    }
+    else
+    {
+      d3.select("#title_map").text("Losses 2015 [$] Damage Type: All");
+
+      my_data_map = d3.nest()
+      .key(function(d) { return d.State_Code.replace(/ /g, '');})
+      .rollup(function(d) {
+        return d3.sum(d, function(g) {return g.Amount; });
+      })
+      .entries(mydata);
+      for (var i = 0; i < my_data_map.length; i++) {
+        if( my_data_map[i].value < min) min = my_data_map[i].value;
+        if( my_data_map[i].value > max) max = my_data_map[i].value;
+      }
+    }
+  }
+
+  function reSortRoot(root,value_key) {
+    for (var key in root) {
+      if (key == "key") {
+        root.name = root.key;
+        delete root.key;
+      }
+      if (key == "values") {
+        root.children = [];
+        for (item in root.values) {
+          root.children.push(reSortRoot(root.values[item]));
+        }
+        delete root.values;
+      }
+    }
+    return root;
+  }
+
+  function createBarChart() {
+   var svg = d3.select("#svg_graph_g_id");
+
+   var xScale = d3.scaleBand()
+   .domain(my_data_graph.map( function(d)
+    { return d.key;
+    }))
+   .range([svg_bar_height, 0]);
+   var yScale = d3.scaleLinear()
+   .domain([0, d3.max(my_data_graph, function(d) { return d.value; })])
+   .range([0, svg_bar_width]);
+
+   var div = d3.select("body").append("div")
+   .attr("class", "tooltip")
+   .style("opacity", 1);
+   svg.append("g")
+   .call(d3.axisLeft(xScale));
+   svg.append("g")
+   .attr("transform", "translate(0," + (svg_bar_height) + ")")
+   .call(d3.axisBottom(yScale));
+   sortItems = function (a, b) {
+
+    return b.value - a.value;
+  };
+  svg.selectAll("rect")
+  .data(my_data_graph)
+  .enter()
+  .append("rect")
+  .attr("x", 0)
+  .attr("y", function(d, i)
+  {
+    return xScale(d.key);
+  })
+  .attr("height", function(d, i)
+  {
+    return xScale.bandwidth()-1;
+  })
+  .attr("width", function(d) {
+   return yScale(d.value);
+ })
+  .on("mouseover", function(d) {
+    div.transition()
+    .duration(200)
+    .style("opacity", .9);
+    div .html("Damage Descp: "+d.key + "<br/> Amount: "  + d3.format(",d")(d.value))
+    .style("left", (d3.event.pageX) + "px")
+    .style("top", (d3.event.pageY - 28) + "px");
+    generateDataMap(d.key);
+    removeTreeMap();
+    createTreeMap();
+  })
+  .on("mouseout", function(d) {
+    div.transition()
+    .duration(500)
+    .style("opacity", 0);
+    generateDataMap(null);
+    removeTreeMap();
+    createTreeMap();
+  })
+  .attr("class", "myrect");
+}
+
+function removeBarChart() {
+  var svg = d3.select("#svg_graph_g_id");
+  svg.selectAll("rect").remove();
+  svg.selectAll("g").remove();
+  svg.selectAll("clipPath").remove();
+  svg.selectAll("text").remove();
+}
+
+
+function removeTreeMap() {
+  var svg = d3.select("#svg_map_g_id");
+  svg.selectAll("rect").remove();
+  svg.selectAll("clipPath").remove();
+  svg.selectAll("text").remove();
+}
+
+function createTreeMap() {
+ var div_tooltip = d3.select("body").append("div")
+ .style("opacity", 1)
+ .attr("class", "tooltip");
+ var width = 720,
+ height = 520;
+ var projection = d3.geoAlbers()
+ .scale(1000)
+ .translate([width / 2, height / 2]);
+
+ var path = d3.geoPath()
+ .projection(projection);
+
+ var svg = d3.select("body").append("svg")
+ .attr("width", width)
+ .attr("height", height);
+ var minimum = 5,
+ maximum = 24;
+
+ var colorScale = d3.scaleSequential(d3.interpolateBlues)
+ .domain([min, max])
+ d3.selection.prototype.moveToFront = function() {
+  return this.each(function() {
+   this.parentNode.appendChild(this);
+ });
+};
+
+d3.selection.prototype.moveToBack = function() {
+  return this.each(function() {
+   var firstChild = this.parentNode.firstChild;
+   if (firstChild) {
+    this.parentNode.insertBefore(this, firstChild);
+  }
+});
+};
+
+var tmpTree = {};
+tmpTree.key = "Data";
+tmpTree.values = my_data_map;
+var StateById = {};
+var stateNames = {};
+var svg = d3.select("#svg_map_g_id");
+
+
+d3.queue()
+.defer(d3.json, "https://raw.githubusercontent.com/appuk/d3_vis/master/us-10m.json")
+.defer(d3.csv, "https://raw.githubusercontent.com/appuk/d3_vis/master/losses2015_transformed.csv")
+.await(ready);
+
+function ready(error, us, losses) {
+  if (error) throw error;
+  for (var i = 0; i < my_data_map.length; i++) {
+   var dataState = my_data_map[i].key;
+   if (my_data_map[i].value < min) min = my_data_map[i].value;
+   if (my_data_map[i].value > max) max = my_data_map[i].value;
+   var dataValue = my_data_map[i].value;
+   StateById[dataState] = dataValue;
+   for (var j = 0; j < losses.length; j++) {
+    var stateabv = losses[j].State_Abv;
+    if (dataState == losses[j].State_Code) {
+     my_data_map[i].state_abv = stateabv;
+     stateNames[dataState] = stateabv;
+     break;
+   }
+ }
+}
+
+var cell = svg.append("g")
+.attr("class", "states")
+.selectAll("path")
+.data(topojson.feature(us, us.objects.states).features)
+.enter().append("path")
+.attr("fill", function(d) {
+  if (StateById[d.id] == undefined) return colorScale(0);
+  else return colorScale(StateById[d.id]);
+})
+.attr("d", path)
+.style("stroke", "black")
+.on('mouseout',  function() {
+  div_tooltip.transition()
+  .duration(300)
+  .style("opacity", 0);
+  generateDataBar(null);
+  removeBarChart();
+  createBarChart();
+
+})
+.on('mouseover', function(d) {
+  div_tooltip.transition()
+  .duration(300)
+  .style("opacity", 1);
+  div_tooltip .html("2 letter State Name:" + stateNames[d.id] + "  Amount:" + d3.format(",d")(StateById[d.id]))
+  .style("top", (d3.event.pageY - 28) + "px")
+  .style("left", (d3.event.pageX) + "px");
+  generateDataBar(stateNames[d.id]);
+  removeBarChart();
+  createBarChart();
+});
+
+}
+}
+
+window.onload = loadData;
+
+</script>
+
+</head>
+<body>
+  <div id="title_map" align="center">Losses 2015 [$] State: All</div>
+  <svg id="svg_map"></svg>
+  <div id="title_graph" align="center">Losses 2015 [$] Damage Type: All</div>
+  <svg id="svg_graph"></svg>
+</body>
+</html>
